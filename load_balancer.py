@@ -6,6 +6,15 @@ import signal
 import logging
 import argparse
 
+from lb_policies import N2One, RoundRobin, LeastConnections, LeastResponseTime
+
+POLICIES = {
+    "N2One": N2One,
+    "RoundRobin": RoundRobin,
+    "LeastConnections": LeastConnections,
+    "LeastResponseTime": LeastResponseTime
+}
+
 # configure logger output format
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s',datefmt='%m-%d %H:%M:%S')
 logger = logging.getLogger('Load Balancer')
@@ -26,61 +35,6 @@ def graceful_shutdown(signalNumber, frame):
     global done
     done = True
 
-
-# n to 1 policy
-class N2One:
-    def __init__(self, servers):
-        self.servers = servers  
-
-    def select_server(self):
-        return self.servers[0]
-
-    def update(self, *arg):
-        pass
-
-
-# round robin policy
-class RoundRobin:
-    def __init__(self, servers):
-        self.servers = servers
-
-    def select_server(self):
-        pass
-    
-    def update(self, *arg):
-        pass
-
-
-# least connections policy
-class LeastConnections:
-    def __init__(self, servers):
-        self.servers = servers
-
-    def select_server(self):
-        pass
-
-    def update(self, *arg):
-        pass
-
-
-# least response time
-class LeastResponseTime:
-    def __init__(self, servers):
-        self.servers = servers
-
-    def select_server(self):
-        pass
-
-    def update(self, *arg):
-        pass
-
-
-POLICIES = {
-    "N2One": N2One,
-    "RoundRobin": RoundRobin,
-    "LeastConnections": LeastConnections,
-    "LeastResponseTime": LeastResponseTime
-}
 
 class SocketMapper:
     def __init__(self, policy):
