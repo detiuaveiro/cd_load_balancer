@@ -61,7 +61,7 @@ jobs:
           bash ./stress_test.sh
 
       - name: load_balancer Logs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: load_balancer logs
           path: load_balancer.txt
