@@ -20,42 +20,36 @@ logging.basicConfig(level=logging.DEBUG,format='%(asctime)s %(name)-12s %(leveln
 logger = logging.getLogger('Load Balancer')
 
 
-# used to stop the infinity loop
-done = False
-
-sel = selectors.DefaultSelector()
-
-policy = None
-mapper = None
+class BalancerInterrupted(Exception):
+    pass
 
 
-# implements a graceful shutdown
-def graceful_shutdown(signalNumber, frame):  
+def graceful_shutdown(signalNumber, frame):
     logger.debug('Graceful Shutdown...')
-    global done
-    done = True
+    raise BalancerInterrupted()
 
 
 class SocketMapper:
-    def __init__(self, policy):
+    def __init__(self, policy, sel):
         self.policy = policy
         self.map = {}
+        self.sel = sel
 
     def add(self, client_sock, upstream_server):
         client_sock.setblocking(False)
-        sel.register(client_sock, selectors.EVENT_READ, read)
+        self.sel.register(client_sock, selectors.EVENT_READ, read)
         upstream_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         upstream_sock.connect(upstream_server)
         upstream_sock.setblocking(False)
-        sel.register(upstream_sock, selectors.EVENT_READ, read)
+        self.sel.register(upstream_sock, selectors.EVENT_READ, read)
         logger.debug("Proxying to %s %s", *upstream_server)
         self.map[client_sock] =  upstream_sock
 
     def delete(self, sock):
         paired_sock = self.get_sock(sock)
-        sel.unregister(sock)
+        self.sel.unregister(sock)
         sock.close()
-        sel.unregister(paired_sock)
+        self.sel.unregister(paired_sock)
         paired_sock.close()
         if sock in self.map:
             self.map.pop(sock)
@@ -69,20 +63,23 @@ class SocketMapper:
             if client == sock:
                 return upstream
         return None
-    
+
     def get_upstream_sock(self, sock):
         return self.map.get(sock)
 
     def get_all_socks(self):
         """ Flatten all sockets into a list"""
-        return list(sum(self.map.items(), ())) 
+        return list(sum(self.map.items(), ()))
 
-def accept(sock, mask):
+    def get_policy(self):
+        return self.policy
+
+def accept(sock, mask, mapper):
     client, addr = sock.accept()
     logger.debug("Accepted connection %s %s", *addr)
-    mapper.add(client, policy.select_server())
+    mapper.add(client, mapper.get_policy().select_server())
 
-def read(conn,mask):
+def read(conn, mask, mapper):
     data = conn.recv(4096)
     if len(data) == 0: # No messages in socket, we can close down the socket
         mapper.delete(conn)
@@ -91,15 +88,12 @@ def read(conn,mask):
 
 
 def main(addr, servers, policy_class):
-    global policy
-    global mapper
-
-    # register handler for interruption 
-    # it stops the infinite loop gracefully
     signal.signal(signal.SIGINT, graceful_shutdown)
 
     policy = policy_class(servers)
-    mapper = SocketMapper(policy)
+    sel = selectors.DefaultSelector()
+
+    mapper = SocketMapper(policy, sel)
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.bind(addr)
@@ -110,13 +104,14 @@ def main(addr, servers, policy_class):
 
     try:
         logger.debug("Listening on %s %s", *addr)
-        while not done:
+        while True:
             events = sel.select(timeout=1)
             for key, mask in events:
                 if(key.fileobj.fileno()>0):
                     callback = key.data
-                    callback(key.fileobj, mask)
-                
+                    callback(key.fileobj, mask, mapper)
+    except BalancerInterrupted as e:
+        logger.info('Balancer Stopped')
     except Exception as err:
         logger.error(err)
 
@@ -126,7 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', dest='port', type=int, help='load balancer port', default=8080)
     parser.add_argument('-s', dest='servers', nargs='+', type=int, help='list of servers ports')
     args = parser.parse_args()
-    
+
     servers = [('localhost', p) for p in args.servers]
-    
+
     main(('127.0.0.1', args.port), servers, POLICIES[args.policy])
