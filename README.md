@@ -64,7 +64,7 @@ $ httperf --server=localhost --port=8080 --uri=/100 --num-conns=100 --rate=5
 $ git remote add upstream git@github.com:detiuaveiro/load-balancer.git
 $ git fetch upstream
 $ git checkout master
-$ git merge upstream/master
+$ git merge upstream/master --allow-unrelated-histories
 ```
 
 ## Authors
